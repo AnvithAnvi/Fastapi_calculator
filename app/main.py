@@ -7,7 +7,8 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="FastAPI Calculator API")
 
-# Dependency to get DB session
+
+# --- Database Dependency ---
 def get_db():
     db = SessionLocal()
     try:
@@ -16,6 +17,20 @@ def get_db():
         db.close()
 
 
+# --- Create default user at startup ---
+@app.on_event("startup")
+def create_default_user():
+    db = SessionLocal()
+    user = db.query(models.User).filter(models.User.id == 1).first()
+    if not user:
+        default_user = models.User(username="default", email="default@example.com")
+        db.add(default_user)
+        db.commit()
+        db.refresh(default_user)
+    db.close()
+
+
+# --- Calculator Endpoints ---
 @app.post("/add")
 def add_numbers(payload: dict, db: Session = Depends(get_db)):
     x = payload["x"]
