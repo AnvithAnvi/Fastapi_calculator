@@ -1,39 +1,13 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app import models
 from app.database import engine, SessionLocal
 
-# Create all tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="FastAPI Calculator with PostgreSQL")
+app = FastAPI(title="FastAPI Calculator API")
 
-# --------------------------------------------------------------------
-# Utility: create a default user on startup (fixes FK violation)
-# --------------------------------------------------------------------
-def ensure_default_user():
-    """Ensure there is at least one default user in the database."""
-    db = SessionLocal()
-    user = db.query(models.User).filter(models.User.id == 1).first()
-    if not user:
-        default_user = models.User(username="default", email="default@example.com")
-        db.add(default_user)
-        db.commit()
-        db.refresh(default_user)
-        print("✅ Default user created:", default_user.username)
-    db.close()
-
-
-@app.on_event("startup")
-def startup_event():
-    """Run on app startup — ensure DB is initialized."""
-    ensure_default_user()
-    print("🚀 FastAPI app started and default user ensured.")
-
-
-# --------------------------------------------------------------------
-# Dependency
-# --------------------------------------------------------------------
+# Dependency to get DB session
 def get_db():
     db = SessionLocal()
     try:
@@ -42,30 +16,12 @@ def get_db():
         db.close()
 
 
-# --------------------------------------------------------------------
-# Routes
-# --------------------------------------------------------------------
-@app.get("/")
-def home():
-    return {"message": "Welcome to the FastAPI Calculator!"}
-
-
 @app.post("/add")
 def add_numbers(payload: dict, db: Session = Depends(get_db)):
-    x = payload.get("x")
-    y = payload.get("y")
+    x = payload["x"]
+    y = payload["y"]
     result = x + y
-
-    # Ensure the user exists (FK safety)
-    ensure_default_user()
-
-    calc = models.Calculation(
-        operation="add",
-        operand_a=x,
-        operand_b=y,
-        result=result,
-        user_id=1,  # always link to default user
-    )
+    calc = models.Calculation(operation="add", operand_a=x, operand_b=y, result=result, user_id=1)
     db.add(calc)
     db.commit()
     db.refresh(calc)
@@ -74,19 +30,36 @@ def add_numbers(payload: dict, db: Session = Depends(get_db)):
 
 @app.post("/subtract")
 def subtract_numbers(payload: dict, db: Session = Depends(get_db)):
-    x = payload.get("x")
-    y = payload.get("y")
+    x = payload["x"]
+    y = payload["y"]
     result = x - y
+    calc = models.Calculation(operation="subtract", operand_a=x, operand_b=y, result=result, user_id=1)
+    db.add(calc)
+    db.commit()
+    db.refresh(calc)
+    return {"result": result, "calculation_id": calc.id}
 
-    ensure_default_user()
 
-    calc = models.Calculation(
-        operation="subtract",
-        operand_a=x,
-        operand_b=y,
-        result=result,
-        user_id=1,
-    )
+@app.post("/multiply")
+def multiply_numbers(payload: dict, db: Session = Depends(get_db)):
+    x = payload["x"]
+    y = payload["y"]
+    result = x * y
+    calc = models.Calculation(operation="multiply", operand_a=x, operand_b=y, result=result, user_id=1)
+    db.add(calc)
+    db.commit()
+    db.refresh(calc)
+    return {"result": result, "calculation_id": calc.id}
+
+
+@app.post("/divide")
+def divide_numbers(payload: dict, db: Session = Depends(get_db)):
+    x = payload["x"]
+    y = payload["y"]
+    if y == 0:
+        raise HTTPException(status_code=400, detail="Cannot divide by zero")
+    result = x / y
+    calc = models.Calculation(operation="divide", operand_a=x, operand_b=y, result=result, user_id=1)
     db.add(calc)
     db.commit()
     db.refresh(calc)
