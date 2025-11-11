@@ -1,20 +1,39 @@
-# app/main.py
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-from app.operations import add, subtract, multiply, divide
-from app.database import SessionLocal, engine
 from app import models
+from app.database import engine, SessionLocal
 
-# Initialize DB tables
+# Create all tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="FastAPI Calculator with PostgreSQL",
-    description="A calculator API that logs all operations to a PostgreSQL database using Docker Compose and pgAdmin.",
-    version="1.0.0",
-)
+app = FastAPI(title="FastAPI Calculator with PostgreSQL")
 
-# Dependency to get DB session
+# --------------------------------------------------------------------
+# Utility: create a default user on startup (fixes FK violation)
+# --------------------------------------------------------------------
+def ensure_default_user():
+    """Ensure there is at least one default user in the database."""
+    db = SessionLocal()
+    user = db.query(models.User).filter(models.User.id == 1).first()
+    if not user:
+        default_user = models.User(username="default", email="default@example.com")
+        db.add(default_user)
+        db.commit()
+        db.refresh(default_user)
+        print("✅ Default user created:", default_user.username)
+    db.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    """Run on app startup — ensure DB is initialized."""
+    ensure_default_user()
+    print("🚀 FastAPI app started and default user ensured.")
+
+
+# --------------------------------------------------------------------
+# Dependency
+# --------------------------------------------------------------------
 def get_db():
     db = SessionLocal()
     try:
@@ -23,59 +42,52 @@ def get_db():
         db.close()
 
 
+# --------------------------------------------------------------------
+# Routes
+# --------------------------------------------------------------------
 @app.get("/")
-def read_root():
+def home():
     return {"message": "Welcome to the FastAPI Calculator!"}
 
 
 @app.post("/add")
 def add_numbers(payload: dict, db: Session = Depends(get_db)):
-    x, y = payload["x"], payload["y"]
-    result = add(x, y)
+    x = payload.get("x")
+    y = payload.get("y")
+    result = x + y
 
-    db_calc = models.Calculation(operation="add", operand_a=x, operand_b=y, result=result, user_id=1)
-    db.add(db_calc)
+    # Ensure the user exists (FK safety)
+    ensure_default_user()
+
+    calc = models.Calculation(
+        operation="add",
+        operand_a=x,
+        operand_b=y,
+        result=result,
+        user_id=1,  # always link to default user
+    )
+    db.add(calc)
     db.commit()
-    return {"result": result}
+    db.refresh(calc)
+    return {"result": result, "calculation_id": calc.id}
 
 
 @app.post("/subtract")
 def subtract_numbers(payload: dict, db: Session = Depends(get_db)):
-    x, y = payload["x"], payload["y"]
-    result = subtract(x, y)
+    x = payload.get("x")
+    y = payload.get("y")
+    result = x - y
 
-    db_calc = models.Calculation(operation="subtract", operand_a=x, operand_b=y, result=result, user_id=1)
-    db.add(db_calc)
+    ensure_default_user()
+
+    calc = models.Calculation(
+        operation="subtract",
+        operand_a=x,
+        operand_b=y,
+        result=result,
+        user_id=1,
+    )
+    db.add(calc)
     db.commit()
-    return {"result": result}
-
-
-@app.post("/multiply")
-def multiply_numbers(payload: dict, db: Session = Depends(get_db)):
-    x, y = payload["x"], payload["y"]
-    result = multiply(x, y)
-
-    db_calc = models.Calculation(operation="multiply", operand_a=x, operand_b=y, result=result, user_id=1)
-    db.add(db_calc)
-    db.commit()
-    return {"result": result}
-
-
-@app.post("/divide")
-def divide_numbers(payload: dict, db: Session = Depends(get_db)):
-    x, y = payload["x"], payload["y"]
-
-    if y == 0:
-        raise HTTPException(status_code=400, detail="Cannot divide by zero")
-
-    result = divide(x, y)
-    db_calc = models.Calculation(operation="divide", operand_a=x, operand_b=y, result=result, user_id=1)
-    db.add(db_calc)
-    db.commit()
-    return {"result": result}
-
-
-@app.get("/history")
-def get_all_calculations(db: Session = Depends(get_db)):
-    records = db.query(models.Calculation).all()
-    return records
+    db.refresh(calc)
+    return {"result": result, "calculation_id": calc.id}
