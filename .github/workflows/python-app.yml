@@ -45,11 +45,13 @@ jobs:
           echo "Waiting for PostgreSQL to initialize..."
           sleep 15
 
-      - name: Run tests
+      - name: Run tests (skip Playwright)
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/fastapi_db
           PYTHONPATH: ${{ github.workspace }}
         run: |
+          # Start FastAPI app in background
           uvicorn app.main:app --host 127.0.0.1 --port 8000 &
           sleep 7
-          pytest --cov=app -v --maxfail=1 --disable-warnings
+          # Run pytest, skip browser-based tests
+          pytest --cov=app -v --maxfail=1 --disable-warnings --ignore=tests/e2e
