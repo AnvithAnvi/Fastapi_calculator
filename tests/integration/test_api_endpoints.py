@@ -6,7 +6,10 @@ client = TestClient(app)
 def test_add_endpoint():
     response = client.post("/add", json={"x": 3, "y": 5})
     assert response.status_code == 200
-    assert response.json() == {"result": 8}
+    data = response.json()
+    assert data["result"] == 8
+    assert "calculation_id" in data
+
 
 def test_subtract_endpoint():
     response = client.post("/subtract", json={"x": 10, "y": 4})
